@@ -1,0 +1,67 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Subject {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  files     File[]
+  topics    Topic[]
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model File {
+  id        String   @id @default(cuid())
+  name      String
+  type      String   // "SLIDES", "EXERCISES", "EXAMS"
+  mimeType  String
+  base64    String   // Store file contents as base64 in database
+  createdAt DateTime @default(now())
+  subjectId String
+  subject   Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+}
+
+model Topic {
+  id          String   @id @default(cuid())
+  name        String
+  category    String   // e.g. "Theory", "Calculation", "Design"
+  description String
+  status      String   @default("RED") // "RED", "YELLOW", "GREEN"
+  difficulty  String   @default("MEDIUM") // "LOW", "MEDIUM", "HIGH"
+  sources     String   @default("[]") // Store JSON array of sources: { fileId, fileName, fileType, page }
+  subtopics   String   @default("[]") // Store JSON array of subtopics: { name, details }
+  exercises   String   @default("[]") // Store JSON array of exercise tasks: { name, details }
+  exams       String   @default("[]") // Store JSON array of exam questions: { name, details }
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  subjectId   String
+  subject     Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  password     String?
+  image        String?
+  role         String   @default("USER")
+  geminiApiKey String?  // Store custom Gemini API Key
+  subjects     Subject[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model WhitelistedEmail {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  createdAt DateTime @default(now())
+}
