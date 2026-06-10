@@ -161,7 +161,7 @@ interface SubjectDetailProps {
 export default function SubjectDetail({ subject: initialSubject }: SubjectDetailProps) {
   const { data: session } = useSession();
   const [subject, setSubject] = useState(initialSubject);
-  const [activeTab, setActiveTab] = useState<"checklist" | "files">("checklist");
+  const [activeTab, setActiveTab] = useState<"checklist" | "files" | "todo">("checklist");
   const [uploadingType, setUploadingType] = useState<"SLIDES" | "EXERCISES" | "EXAMS" | null>(null);
   const [deletingFileId, setDeletingFileId] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -204,6 +204,68 @@ export default function SubjectDetail({ subject: initialSubject }: SubjectDetail
   const slidesFiles = subject.files.filter(f => f.type === "SLIDES");
   const exercisesFiles = subject.files.filter(f => f.type === "EXERCISES");
   const examsFiles = subject.files.filter(f => f.type === "EXAMS");
+
+  // Compute unchecked tasks
+  interface UncheckedTask {
+    topicId: string;
+    topicName: string;
+    type: "subtopic" | "exercise" | "exam";
+    name: string;
+    details: string;
+  }
+
+  const uncheckedTasks: UncheckedTask[] = [];
+  subject.topics.forEach(topic => {
+    topic.subtopics.forEach(sub => {
+      const key = `${topic.id}-subtopic-${sub.name}`;
+      if (!completedItems[key]) {
+        uncheckedTasks.push({
+          topicId: topic.id,
+          topicName: topic.name,
+          type: "subtopic",
+          name: sub.name,
+          details: sub.details
+        });
+      }
+    });
+    topic.exercises.forEach(ex => {
+      const key = `${topic.id}-exercise-${ex.name}`;
+      if (!completedItems[key]) {
+        uncheckedTasks.push({
+          topicId: topic.id,
+          topicName: topic.name,
+          type: "exercise",
+          name: ex.name,
+          details: ex.details
+        });
+      }
+    });
+    topic.exams.forEach(exam => {
+      const key = `${topic.id}-exam-${exam.name}`;
+      if (!completedItems[key]) {
+        uncheckedTasks.push({
+          topicId: topic.id,
+          topicName: topic.name,
+          type: "exam",
+          name: exam.name,
+          details: exam.details
+        });
+      }
+    });
+  });
+
+  const topicsWithTodo = subject.topics.map(topic => {
+    const subtopics = topic.subtopics.filter(sub => !completedItems[`${topic.id}-subtopic-${sub.name}`]);
+    const exercises = topic.exercises.filter(ex => !completedItems[`${topic.id}-exercise-${ex.name}`]);
+    const exams = topic.exams.filter(exam => !completedItems[`${topic.id}-exam-${exam.name}`]);
+    return {
+      ...topic,
+      subtopics,
+      exercises,
+      exams,
+      hasTodo: subtopics.length > 0 || exercises.length > 0 || exams.length > 0
+    };
+  }).filter(t => t.hasTodo);
 
   // Handle file upload
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: "SLIDES" | "EXERCISES" | "EXAMS") => {
@@ -577,6 +639,16 @@ export default function SubjectDetail({ subject: initialSubject }: SubjectDetail
           Klausurthemen ({subject.topics.length})
         </button>
         <button
+          onClick={() => setActiveTab("todo")}
+          className={`px-6 py-3 font-semibold text-base transition-colors border-b-2 ${
+            activeTab === "todo"
+              ? "border-blue-500 text-blue-400"
+              : "border-transparent text-slate-400 hover:text-slate-200"
+          }`}
+        >
+          Offene Aufgaben ({uncheckedTasks.length})
+        </button>
+        <button
           onClick={() => setActiveTab("files")}
           className={`px-6 py-3 font-semibold text-base transition-colors border-b-2 ${
             activeTab === "files"
@@ -948,41 +1020,237 @@ export default function SubjectDetail({ subject: initialSubject }: SubjectDetail
                           </div>
                         </div>
 
-                        {/* Document Links */}
-                        <div className="pt-4 border-t border-slate-900">
-                          <h5 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2.5">Direkte Dokumenten-Links</h5>
-                          {topic.sources.length === 0 ? (
-                            <p className="text-xs text-slate-655 italic">Keine Quelldateien verlinkt</p>
-                          ) : (
-                            <div className="flex flex-wrap gap-2">
-                              {topic.sources.map((source, idx) => {
-                                let link = `/api/files/${source.fileId}`;
-                                if (source.page) {
-                                  link += `#page=${source.page}`;
-                                }
-                                return (
-                                  <a
-                                    key={idx}
-                                    href={link}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 text-blue-400 hover:text-blue-300 transition-colors"
-                                  >
-                                    <ExternalLink size={12} />
-                                    <span>{source.fileName}</span>
-                                    {source.page && <span className="text-slate-550 font-normal">S. {source.page}</span>}
-                                  </a>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-
                       </div>
                     )}
                   </div>
                 );
               })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TODO TAB */}
+      {activeTab === "todo" && (
+        <div className="max-w-4xl mx-auto space-y-6">
+          {topicsWithTodo.length === 0 ? (
+            <div className="glass-card rounded-2xl p-12 text-center border border-dashed border-slate-800">
+              <CheckCircle2 className="mx-auto text-emerald-500 mb-4 animate-pulse-slow" size={48} />
+              <h3 className="text-xl font-semibold text-slate-300">Alle Aufgaben erledigt! 🎉</h3>
+              <p className="text-slate-500 mt-2 max-w-sm mx-auto">
+                Hervorragende Arbeit! Du hast alle Themen, Übungsaufgaben und Klausurfragen für dieses Fach durchgearbeitet.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              <div className="glass-card p-4 rounded-xl flex items-center justify-between border border-blue-500/10 bg-blue-500/5">
+                <span className="text-sm text-slate-300">
+                  Du hast noch <span className="font-bold text-blue-400">{uncheckedTasks.length}</span> offene Aufgaben.
+                </span>
+              </div>
+              
+              {topicsWithTodo.map((topic) => (
+                <div key={topic.id} className="glass-card rounded-2xl border border-slate-800/80 overflow-hidden animate-fade-in">
+                  <div className="px-6 py-4 bg-slate-900/40 border-b border-slate-900 flex justify-between items-center">
+                    <h4 className="font-semibold text-slate-200 text-sm">{topic.name}</h4>
+                    <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">
+                      {topic.category}
+                    </span>
+                  </div>
+                  
+                  <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {/* Subtopics */}
+                    {topic.subtopics.length > 0 && (
+                      <div className="space-y-3">
+                        <h5 className="text-xs font-semibold text-blue-400 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-900 pb-1.5">
+                          <BookOpen size={14} /> Theorie & Folien
+                        </h5>
+                        <ul className="space-y-2.5">
+                          {topic.subtopics.map((sub, idx) => {
+                            const link = getLinkForType(topic.sources, "SLIDES", sub.details);
+                            return (
+                              <li key={idx} className="flex items-start gap-2 text-xs leading-relaxed group">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleItemCompleted(topic.id, "subtopic", sub.name)}
+                                  className="mt-0.5 flex-shrink-0 w-4 h-4 rounded border border-slate-800 bg-slate-950/50 hover:border-slate-700 text-transparent flex items-center justify-center transition-all cursor-pointer"
+                                >
+                                  <svg className="w-2.5 h-2.5 stroke-current stroke-[3] fill-none" viewBox="0 0 24 24">
+                                    <polyline points="20 6 9 17 4 12" />
+                                  </svg>
+                                </button>
+                                {link ? (
+                                  <a
+                                    href={link}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="select-none flex-grow block group/link"
+                                  >
+                                    <span className="font-medium text-slate-300 transition-all group-hover/link:text-blue-400 group-hover/link:underline">
+                                      {sub.name}
+                                    </span>
+                                    {sub.details && (
+                                      <span className="block text-[10px] mt-0.5 text-slate-500 group-hover/link:text-slate-400 transition-all">
+                                        {sub.details}
+                                      </span>
+                                    )}
+                                  </a>
+                                ) : (
+                                  <div onClick={() => toggleItemCompleted(topic.id, "subtopic", sub.name)} className="cursor-pointer select-none flex-grow">
+                                    <span className="font-medium text-slate-300 group-hover:text-slate-200 transition-all">
+                                      {sub.name}
+                                    </span>
+                                    {sub.details && (
+                                      <span className="block text-[10px] mt-0.5 text-slate-500 transition-all">
+                                        {sub.details}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    )}
+                    
+                    {/* Exercises */}
+                    {topic.exercises.length > 0 && (
+                      <div className="space-y-3 col-span-1">
+                        <h5 className="text-xs font-semibold text-indigo-400 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-900 pb-1.5">
+                          <ClipboardList size={14} /> Übungsaufgaben
+                        </h5>
+                        <ul className="space-y-2.5">
+                          {topic.exercises.map((ex, idx) => {
+                            const link = getLinkForType(topic.sources, "EXERCISES", ex.details);
+                            return (
+                              <li key={idx} className="flex items-start gap-2 text-xs leading-relaxed group">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleItemCompleted(topic.id, "exercise", ex.name)}
+                                  className="mt-0.5 flex-shrink-0 w-4 h-4 rounded border border-slate-800 bg-slate-950/50 hover:border-slate-700 text-transparent flex items-center justify-center transition-all cursor-pointer"
+                                >
+                                  <svg className="w-2.5 h-2.5 stroke-current stroke-[3] fill-none" viewBox="0 0 24 24">
+                                    <polyline points="20 6 9 17 4 12" />
+                                  </svg>
+                                </button>
+                                {link ? (
+                                  <a
+                                    href={link}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="select-none flex-grow block group/link"
+                                  >
+                                    <span className="font-medium text-slate-300 transition-all group-hover/link:text-indigo-400 group-hover/link:underline">
+                                      {ex.name}
+                                    </span>
+                                    {ex.details && (
+                                      <span className="block text-[10px] mt-0.5 text-slate-500 group-hover/link:text-slate-400 transition-all">
+                                        {ex.details}
+                                      </span>
+                                    )}
+                                  </a>
+                                ) : (
+                                  <div onClick={() => toggleItemCompleted(topic.id, "exercise", ex.name)} className="cursor-pointer select-none flex-grow">
+                                    <span className="font-medium text-slate-300 group-hover:text-slate-200 transition-all">
+                                      {ex.name}
+                                    </span>
+                                    {ex.details && (
+                                      <span className="block text-[10px] mt-0.5 text-slate-500 transition-all">
+                                        {ex.details}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    )}
+                    
+                    {/* Exams */}
+                    {topic.exams.length > 0 && (
+                      <div className="space-y-3 col-span-1">
+                        <h5 className="text-xs font-semibold text-purple-400 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-900 pb-1.5">
+                          <HelpCircle size={14} /> Klausurfragen
+                        </h5>
+                        <ul className="space-y-2.5">
+                          {topic.exams.map((exam, idx) => {
+                            const link = getLinkForType(topic.sources, "EXAMS", exam.details);
+                            return (
+                              <li key={idx} className="flex items-start gap-2 text-xs leading-relaxed group">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleItemCompleted(topic.id, "exam", exam.name)}
+                                  className="mt-0.5 flex-shrink-0 w-4 h-4 rounded border border-slate-800 bg-slate-950/50 hover:border-slate-700 text-transparent flex items-center justify-center transition-all cursor-pointer"
+                                >
+                                  <svg className="w-2.5 h-2.5 stroke-current stroke-[3] fill-none" viewBox="0 0 24 24">
+                                    <polyline points="20 6 9 17 4 12" />
+                                  </svg>
+                                </button>
+                                {link ? (
+                                  <a
+                                    href={link}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="select-none flex-grow block group/link"
+                                  >
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                      <span className="font-medium text-slate-300 transition-all group-hover/link:text-purple-400 group-hover/link:underline">
+                                        {exam.name}
+                                      </span>
+                                      {exam.type && (
+                                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-semibold tracking-wide border uppercase transition-all shadow-sm ${
+                                          exam.type === "APPLICATION"
+                                            ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.2)]"
+                                            : "bg-amber-500/10 border-amber-500/20 text-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.2)]"
+                                        }`}>
+                                          {exam.type === "APPLICATION" ? "Anwendung" : "Auswendiglernen"}
+                                        </span>
+                                      )}
+                                    </div>
+                                    {exam.details && (
+                                      <span className="block text-[10px] mt-0.5 text-slate-500 group-hover/link:text-slate-400 transition-all">
+                                        {exam.details}
+                                      </span>
+                                    )}
+                                  </a>
+                                ) : (
+                                  <div onClick={() => toggleItemCompleted(topic.id, "exam", exam.name)} className="cursor-pointer select-none flex-grow">
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                      <span className="font-medium text-slate-300 group-hover:text-slate-200 transition-all">
+                                        {exam.name}
+                                      </span>
+                                      {exam.type && (
+                                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-semibold tracking-wide border uppercase transition-all shadow-sm ${
+                                          exam.type === "APPLICATION"
+                                            ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.2)]"
+                                            : "bg-amber-500/10 border-amber-500/20 text-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.2)]"
+                                        }`}>
+                                          {exam.type === "APPLICATION" ? "Anwendung" : "Auswendiglernen"}
+                                        </span>
+                                      )}
+                                    </div>
+                                    {exam.details && (
+                                      <span className="block text-[10px] mt-0.5 text-slate-500 transition-all">
+                                        {exam.details}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
