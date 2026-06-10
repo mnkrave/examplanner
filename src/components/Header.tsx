@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useSession, signOut } from "next-auth/react";
-import { Sparkles, Settings, LogOut, Key, Check, Loader2, AlertCircle, X, Shield, Plus, Trash2 } from "lucide-react";
+import { Sparkles, Settings, LogOut, Key, Check, Loader2, AlertCircle, X, Shield, Plus, Trash2, HelpCircle } from "lucide-react";
 import Link from "next/link";
 import {
   getGeminiApiKey,
@@ -24,6 +24,8 @@ export default function Header() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [hasApiKey, setHasApiKey] = useState<boolean | null>(null);
+  const [isGetStartedOpen, setIsGetStartedOpen] = useState(false);
 
   // Whitelist States
   const [whitelistEmails, setWhitelistEmails] = useState<string[]>([]);
@@ -31,6 +33,26 @@ export default function Header() {
   const [whitelistLoading, setWhitelistLoading] = useState(false);
   const [whitelistError, setWhitelistError] = useState<string | null>(null);
   const [whitelistSuccess, setWhitelistSuccess] = useState<string | null>(null);
+
+  // Fetch API key status on mount to check if "Get Started" should be shown
+  useEffect(() => {
+    if (session) {
+      getGeminiApiKey()
+        .then((key) => {
+          setHasApiKey(!!key);
+          if (key) {
+            setApiKey(key);
+            setIsKeySaved(true);
+          } else {
+            setApiKey("");
+            setIsKeySaved(false);
+          }
+        })
+        .catch(() => {
+          setHasApiKey(false);
+        });
+    }
+  }, [session]);
 
   // Fetch API key status on mount / modal open
   useEffect(() => {
@@ -83,12 +105,21 @@ export default function Header() {
     setSuccess(null);
     try {
       await updateGeminiApiKey(apiKey);
-      setIsKeySaved(!!apiKey.trim());
+      const isSaved = !!apiKey.trim();
+      setIsKeySaved(isSaved);
+      setHasApiKey(isSaved);
       setSuccess(apiKey.trim() ? "API-Schlüssel erfolgreich gespeichert!" : "API-Schlüssel gelöscht.");
       if (!apiKey.trim()) {
         setApiKey("");
       }
-      setTimeout(() => setSuccess(null), 3000);
+      if (isSaved) {
+        setTimeout(() => {
+          setSuccess(null);
+          setIsGetStartedOpen(false);
+        }, 1500);
+      } else {
+        setTimeout(() => setSuccess(null), 3000);
+      }
     } catch (err: any) {
       setError(err.message || "Fehler beim Speichern des API-Schlüssels.");
     } finally {
@@ -105,8 +136,12 @@ export default function Header() {
       await updateGeminiApiKey("");
       setApiKey("");
       setIsKeySaved(false);
+      setHasApiKey(false);
       setSuccess("API-Schlüssel gelöscht.");
-      setTimeout(() => setSuccess(null), 3000);
+      setTimeout(() => {
+        setSuccess(null);
+        setIsGetStartedOpen(false);
+      }, 1500);
     } catch (err: any) {
       setError(err.message || "Fehler beim Löschen des API-Schlüssels.");
     } finally {
@@ -197,6 +232,87 @@ export default function Header() {
                 </span>
               )}
             </div>
+
+            {/* Get Started Button */}
+            {hasApiKey === false && (
+              <div className="relative">
+                <button
+                  onClick={() => setIsGetStartedOpen(!isGetStartedOpen)}
+                  className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold text-xs transition-all shadow-[0_0_15px_rgba(99,102,241,0.3)] hover:shadow-[0_0_20px_rgba(99,102,241,0.5)] flex items-center gap-1.5 animate-pulse-slow cursor-pointer"
+                >
+                  <Sparkles size={12} className="text-amber-300" />
+                  <span>Get Started</span>
+                </button>
+                
+                {isGetStartedOpen && (
+                  <div className="absolute right-0 mt-2 z-50 w-72 glass-panel p-4 rounded-2xl border border-slate-800 shadow-[0_15px_40px_rgba(0,0,0,0.5)] space-y-4 animate-slide-up">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-slate-200">Gemini API-Key hinzufügen</span>
+                      <Link
+                        href="/help/api-key"
+                        target="_blank"
+                        className="p-1 rounded-lg bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-400 hover:text-slate-200 transition-colors flex items-center justify-center cursor-pointer"
+                        title="Anleitung anzeigen"
+                      >
+                        <HelpCircle size={14} />
+                      </Link>
+                    </div>
+                    
+                    <form onSubmit={handleSaveApiKey} className="space-y-3">
+                      <div className="relative">
+                        <input
+                          type="password"
+                          placeholder={isKeySaved ? "••••••••••••••••••••••••••••••••" : "AIzaSy..."}
+                          value={apiKey}
+                          onChange={(e) => setApiKey(e.target.value)}
+                          disabled={isLoading}
+                          className="w-full pl-3 pr-10 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-200 placeholder-slate-700 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/30 transition-all text-xs"
+                        />
+                        {isKeySaved && (
+                          <div className="absolute inset-y-0 right-3 flex items-center text-emerald-400">
+                            <Check size={14} />
+                          </div>
+                        )}
+                      </div>
+                      
+                      {error && (
+                        <p className="text-[10px] text-rose-450 leading-tight">{error}</p>
+                      )}
+                      {success && (
+                        <p className="text-[10px] text-emerald-400 leading-tight">{success}</p>
+                      )}
+                      
+                      <div className="flex justify-between items-center pt-1">
+                        {isKeySaved ? (
+                          <button
+                            type="button"
+                            onClick={handleDeleteApiKey}
+                            disabled={isLoading}
+                            className="text-[10px] text-rose-450 hover:underline bg-transparent border-none p-0 cursor-pointer"
+                          >
+                            Löschen
+                          </button>
+                        ) : (
+                          <span className="text-[9px] text-slate-500">Gemini-2.5-flash</span>
+                        )}
+                        
+                        <button
+                          type="submit"
+                          disabled={isLoading}
+                          className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold text-[10px] flex items-center gap-1 transition-all cursor-pointer"
+                        >
+                          {isLoading ? (
+                            <Loader2 size={10} className="animate-spin" />
+                          ) : (
+                            "Speichern"
+                          )}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Settings button */}
             <button
