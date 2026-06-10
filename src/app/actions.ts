@@ -303,6 +303,85 @@ export async function uploadFile(formData: FormData) {
 }
 
 /**
+ * Upload a file directly from Google Drive using user's access token
+ */
+export async function uploadFileFromDrive(
+  subjectId: string,
+  fileId: string,
+  fileName: string,
+  mimeType: string,
+  type: "SLIDES" | "EXERCISES" | "EXAMS"
+) {
+  try {
+    const userId = await getRequiredSession();
+    
+    // 1. Verify subject ownership
+    const subject = await prisma.subject.findFirst({
+      where: {
+        id: subjectId,
+        OR: [{ userId }, { userId: null }]
+      }
+    });
+
+    if (!subject) {
+      throw new Error("Fach nicht gefunden oder nicht autorisiert");
+    }
+
+    // 2. Fetch session to get OAuth accessToken
+    const session = await getServerSession(authOptions);
+    const accessToken = (session as any)?.accessToken;
+
+    if (!accessToken) {
+      throw new Error("Kein Google Drive Zugriffstoken vorhanden. Bitte melde dich erneut mit Google an.");
+    }
+
+    // 3. Download file from Google Drive API
+    const response = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`
+        }
+      }
+    );
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error("Google Drive download failed:", errText);
+      throw new Error("Download von Google Drive fehlgeschlagen. Bitte überprüfe die Berechtigungen.");
+    }
+
+    // 4. Read response as base64
+    const arrayBuffer = await response.arrayBuffer();
+    const base64 = Buffer.from(arrayBuffer).toString("base64");
+
+    // 5. Store in database
+    const newFile = await prisma.file.create({
+      data: {
+        subjectId,
+        name: fileName,
+        type,
+        mimeType,
+        base64
+      }
+    });
+
+    revalidatePath(`/subjects/${subjectId}`);
+    return {
+      id: newFile.id,
+      name: newFile.name,
+      type: newFile.type,
+      mimeType: newFile.mimeType,
+      createdAt: newFile.createdAt.toISOString()
+    };
+  } catch (error: any) {
+    console.error("Error uploading file from Google Drive:", error);
+    throw new Error(error.message || "Fehler beim Laden aus Google Drive");
+  }
+}
+
+
+/**
  * Delete a file (scoped to user)
  */
 export async function deleteFile(subjectId: string, fileId: string) {

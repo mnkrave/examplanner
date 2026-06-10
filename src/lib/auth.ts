@@ -8,7 +8,12 @@ export const authOptions: NextAuthOptions = {
   providers: [
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID || "",
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET || ""
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
+      authorization: {
+        params: {
+          scope: "openid email profile https://www.googleapis.com/auth/drive.readonly"
+        }
+      }
     }),
     CredentialsProvider({
       name: "Credentials",
@@ -106,7 +111,10 @@ export const authOptions: NextAuthOptions = {
       }
       return true;
     },
-    async jwt({ token, user }) {
+    async jwt({ token, user, account }) {
+      if (account) {
+        token.accessToken = account.access_token;
+      }
       if (user) {
         token.sub = user.id;
         // @ts-ignore
@@ -126,6 +134,7 @@ export const authOptions: NextAuthOptions = {
         // @ts-ignore
         session.user.role = token.role || "USER";
       }
+      session.accessToken = token.accessToken;
       return session;
     }
   },

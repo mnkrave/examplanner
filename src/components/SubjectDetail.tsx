@@ -7,7 +7,8 @@ import {
   ChevronDown, ChevronUp, ExternalLink
 } from "lucide-react";
 import Link from "next/link";
-import { uploadFile, deleteFile, toggleTopicStatus, analyzeSubject, getSubjectDetail } from "@/app/actions";
+import { useSession } from "next-auth/react";
+import { uploadFile, deleteFile, toggleTopicStatus, analyzeSubject, getSubjectDetail, uploadFileFromDrive } from "@/app/actions";
 
 interface FileItem {
   id: string;
@@ -49,6 +50,27 @@ interface TopicItem {
   createdAt: string;
 }
 
+const loadScript = (url: string): Promise<void> => {
+  return new Promise((resolve, reject) => {
+    if (typeof window === "undefined") {
+      resolve();
+      return;
+    }
+    const existingScript = document.querySelector(`script[src="${url}"]`);
+    if (existingScript) {
+      resolve();
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = url;
+    script.async = true;
+    script.defer = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error(`Fehler beim Laden von: ${url}`));
+    document.head.appendChild(script);
+  });
+};
+
 interface SubjectDetailProps {
   subject: {
     id: string;
@@ -62,6 +84,7 @@ interface SubjectDetailProps {
 }
 
 export default function SubjectDetail({ subject: initialSubject }: SubjectDetailProps) {
+  const { data: session } = useSession();
   const [subject, setSubject] = useState(initialSubject);
   const [activeTab, setActiveTab] = useState<"checklist" | "files">("checklist");
   const [uploadingType, setUploadingType] = useState<"SLIDES" | "EXERCISES" | "EXAMS" | null>(null);
@@ -148,6 +171,91 @@ export default function SubjectDetail({ subject: initialSubject }: SubjectDetail
     } finally {
       setUploadingType(null);
       e.target.value = ""; // reset input
+    }
+  };
+
+  // Handle file picker from Google Drive
+  const handleGoogleDrivePicker = async (type: "SLIDES" | "EXERCISES" | "EXAMS") => {
+    const accessToken = (session as any)?.accessToken;
+    if (!accessToken) {
+      alert("Bitte melde dich mit Google an, um direkt aus Google Drive hochzuladen.");
+      return;
+    }
+
+    const developerKey = process.env.NEXT_PUBLIC_GOOGLE_API_KEY;
+    if (!developerKey) {
+      alert("Google API-Key (NEXT_PUBLIC_GOOGLE_API_KEY) fehlt in den Umgebungsvariablen. Bitte hinterlege den Schlüssel.");
+      return;
+    }
+
+    setUploadingType(type);
+    setError(null);
+
+    try {
+      // Load the Google API loader script
+      await loadScript("https://apis.google.com/js/api.js");
+
+      // Load client and picker libraries
+      await new Promise<void>((resolve, reject) => {
+        // @ts-ignore
+        window.gapi.load("client:picker", {
+          callback: resolve,
+          onerror: () => reject(new Error("Fehler beim Laden der Google-Bibliotheken")),
+          timeout: 5000,
+          ontimeout: () => reject(new Error("Timeout beim Laden der Google-Bibliotheken"))
+        });
+      });
+
+      // Create Picker View
+      // @ts-ignore
+      const view = new google.picker.DocsView(google.picker.ViewId.DOCS);
+      view.setMimeTypes("application/pdf,text/plain");
+
+      // @ts-ignore
+      const picker = new google.picker.PickerBuilder()
+        .addView(view)
+        .setOAuthToken(accessToken)
+        .setDeveloperKey(developerKey)
+        .setCallback(async (data: any) => {
+          // @ts-ignore
+          if (data.action === google.picker.Action.PICKED) {
+            const doc = data.docs[0];
+            const fileId = doc.id;
+            const fileName = doc.name;
+            const mimeType = doc.mimeType;
+
+            setUploadingType(type);
+            try {
+              const result = await uploadFileFromDrive(subject.id, fileId, fileName, mimeType, type);
+              setSubject((prev) => ({
+                ...prev,
+                files: [
+                  {
+                    id: result.id,
+                    name: result.name,
+                    type: result.type,
+                    mimeType: result.mimeType,
+                    createdAt: result.createdAt
+                  },
+                  ...prev.files
+                ]
+              }));
+            } catch (err: any) {
+              alert(err.message || "Fehler beim Laden aus Google Drive");
+            } finally {
+              setUploadingType(null);
+            }
+          } else if (data.action === "cancel") {
+            setUploadingType(null);
+          }
+        })
+        .build();
+
+      picker.setVisible(true);
+    } catch (err: any) {
+      console.error("Picker error:", err);
+      alert(err.message || "Fehler beim Starten des Google Drive Pickers.");
+      setUploadingType(null);
     }
   };
 
@@ -764,32 +872,54 @@ export default function SubjectDetail({ subject: initialSubject }: SubjectDetail
                   )}
                 </div>
 
-                {/* Upload Button */}
-                <div>
+                {/* Upload Buttons */}
+                <div className="flex flex-col gap-2">
                   <input
                     type="file"
                     id={inputId}
                     onChange={(e) => handleFileUpload(e, fileType)}
                     className="hidden"
                     disabled={uploadingType !== null}
-                    accept=".pdf,.txt,.md,.png,.jpg,.jpeg"
+                    accept=".pdf,.txt,.md"
                   />
-                  <label
-                    htmlFor={inputId}
-                    className="w-full flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 text-slate-300 font-semibold py-3 rounded-xl cursor-pointer transition-all duration-300 shadow-[0_4px_12px_rgba(0,0,0,0.1)] hover:-translate-y-0.5"
-                  >
-                    {uploadingType === fileType ? (
-                      <>
-                        <Loader2 size={18} className="animate-spin text-blue-500" />
-                        Lade hoch...
-                      </>
-                    ) : (
-                      <>
-                        <Upload size={18} />
-                        Datei hochladen
-                      </>
+                  <div className="flex gap-2">
+                    <label
+                      htmlFor={inputId}
+                      className="flex-1 flex items-center justify-center gap-1.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 hover:border-slate-750 text-slate-300 font-semibold py-3 rounded-xl cursor-pointer transition-all duration-300 shadow-[0_4px_12px_rgba(0,0,0,0.1)] hover:-translate-y-0.5 text-xs text-center"
+                    >
+                      {uploadingType === fileType ? (
+                        <>
+                          <Loader2 size={13} className="animate-spin text-blue-500" />
+                          Lade...
+                        </>
+                      ) : (
+                        <>
+                          <Upload size={13} />
+                          Hochladen
+                        </>
+                      )}
+                    </label>
+
+                    {session?.accessToken && (
+                      <button
+                        type="button"
+                        onClick={() => handleGoogleDrivePicker(fileType)}
+                        disabled={uploadingType !== null}
+                        className="flex-1 flex items-center justify-center gap-1.5 bg-gradient-to-r from-emerald-600/5 to-blue-600/5 hover:from-emerald-600/15 hover:to-blue-600/15 border border-emerald-500/20 hover:border-emerald-500/30 text-slate-300 font-semibold py-3 rounded-xl transition-all duration-300 shadow-[0_4px_12px_rgba(0,0,0,0.05)] hover:-translate-y-0.5 text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {uploadingType === fileType ? (
+                          <Loader2 size={13} className="animate-spin text-emerald-500" />
+                        ) : (
+                          <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 87.3 78" fill="none">
+                            <path d="M57.3 51.3L87.3 0H56.5L26.5 51.3h30.8z" fill="#FFC107"/>
+                            <path d="M30.8 78L0 26.7l15.4-26.7 30.8 53.4H30.8z" fill="#139556"/>
+                            <path d="M56.5 51.3L30.8 78h56.5l-30.8-26.7z" fill="#1A73E8"/>
+                          </svg>
+                        )}
+                        <span>Aus Drive</span>
+                      </button>
                     )}
-                  </label>
+                  </div>
                 </div>
               </div>
             );
