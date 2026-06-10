@@ -346,6 +346,13 @@ export default function SubjectDetail({ subject: initialSubject }: SubjectDetail
     try {
       const result = await analyzeSubject(subject.id);
       
+      if (!result.success) {
+        setError(result.error || "Fehler bei der AI-Analyse");
+        setAnalysisStep(0);
+        setIsAnalyzing(false);
+        return;
+      }
+      
       // Re-fetch details to sync the final checklist
       // To keep it simple, we reload or re-fetch details
       const updated = await getSubjectDetail(subject.id);

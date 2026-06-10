@@ -528,7 +528,7 @@ export async function analyzeSubject(subjectId: string) {
     return { success: true, count: consolidatedTopics.length };
   } catch (error: any) {
     console.error("Error analyzing subject:", error);
-    throw new Error(error.message || "Fehler bei der AI-Analyse");
+    return { success: false, error: error.message || "Fehler bei der AI-Analyse" };
   }
 }
 

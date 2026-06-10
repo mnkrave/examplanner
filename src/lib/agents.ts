@@ -132,6 +132,13 @@ async function processFile(
   // 1. Attempt local text extraction
   try {
     if (file.mimeType === "application/pdf") {
+      // Polyfill DOMMatrix for Node.js environments to prevent pdf-parse failures
+      if (typeof global !== "undefined" && !(global as any).DOMMatrix) {
+        (global as any).DOMMatrix = class DOMMatrix {
+          constructor() {}
+        };
+      }
+      
       // @ts-ignore
       const { PDFParse } = require("pdf-parse");
       const parser = new PDFParse({ data: buffer });
@@ -166,11 +173,9 @@ async function processFile(
   } else {
     console.log(`[AI Pipeline] Falling back to Gemini Files API for scanned/complex document: ${file.name}`);
     
-    // Ensure tmp directory exists
-    const tmpDir = path.join(process.cwd(), "tmp");
-    if (!fs.existsSync(tmpDir)) {
-      fs.mkdirSync(tmpDir);
-    }
+    // Use system temp directory (writeable on Vercel)
+    const os = require("os");
+    const tmpDir = os.tmpdir();
     
     const tempFilePath = path.join(tmpDir, `temp_${file.id}.pdf`);
     fs.writeFileSync(tempFilePath, buffer);
