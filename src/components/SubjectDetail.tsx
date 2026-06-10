@@ -71,6 +71,81 @@ const loadScript = (url: string): Promise<void> => {
   });
 };
 
+interface Source {
+  fileId: string;
+  fileName: string;
+  fileType: "SLIDES" | "EXERCISES" | "EXAMS";
+  page?: number | null;
+}
+
+const getLinkForType = (
+  sources: Source[],
+  targetType: "SLIDES" | "EXERCISES" | "EXAMS",
+  detailsText?: string
+): string | null => {
+  if (!sources || sources.length === 0) return null;
+  const matchingSources = sources.filter((s) => s.fileType === targetType);
+  if (matchingSources.length === 0) return null;
+
+  // 1. If only one matching source, construct the link
+  if (matchingSources.length === 1) {
+    let link = `/api/files/${matchingSources[0].fileId}`;
+    let pageNum = matchingSources[0].page;
+    
+    // Check if details contains a specific page hint (e.g., S. 77, Seite 81, page 12)
+    if (detailsText) {
+      const pageRegex = /(?:S\.|Seite|Folie|page|Folien)\s*(\d+)/i;
+      const match = detailsText.match(pageRegex);
+      if (match && match[1]) {
+        pageNum = parseInt(match[1], 10);
+      }
+    }
+    
+    if (pageNum) {
+      link += `#page=${pageNum}`;
+    }
+    return link;
+  }
+
+  // 2. If multiple sources, try to match by filename or details
+  if (detailsText) {
+    for (const source of matchingSources) {
+      const cleanFileName = source.fileName.replace(/\.[^/.]+$/, ""); // remove extension
+      // Match if the details contains the filename (e.g. "Exercise 8" or "Klausur WS23")
+      if (detailsText.toLowerCase().includes(cleanFileName.toLowerCase())) {
+        let link = `/api/files/${source.fileId}`;
+        let pageNum = source.page;
+        
+        const pageRegex = /(?:S\.|Seite|Folie|page|Folien)\s*(\d+)/i;
+        const match = detailsText.match(pageRegex);
+        if (match && match[1]) {
+          pageNum = parseInt(match[1], 10);
+        }
+        
+        if (pageNum) {
+          link += `#page=${pageNum}`;
+        }
+        return link;
+      }
+    }
+  }
+
+  // Fallback to the first matching source
+  let link = `/api/files/${matchingSources[0].fileId}`;
+  let pageNum = matchingSources[0].page;
+  if (detailsText) {
+    const pageRegex = /(?:S\.|Seite|Folie|page|Folien)\s*(\d+)/i;
+    const match = detailsText.match(pageRegex);
+    if (match && match[1]) {
+      pageNum = parseInt(match[1], 10);
+    }
+  }
+  if (pageNum) {
+    link += `#page=${pageNum}`;
+  }
+  return link;
+};
+
 interface SubjectDetailProps {
   subject: {
     id: string;
@@ -648,6 +723,7 @@ export default function SubjectDetail({ subject: initialSubject }: SubjectDetail
                               <ul className="space-y-2.5">
                                 {topic.subtopics.map((sub, idx) => {
                                   const isChecked = !!completedItems[`${topic.id}-subtopic-${sub.name}`];
+                                  const link = getLinkForType(topic.sources, "SLIDES", sub.details);
                                   return (
                                     <li key={idx} className="flex items-start gap-2 text-xs leading-relaxed group">
                                       <button
@@ -663,20 +739,43 @@ export default function SubjectDetail({ subject: initialSubject }: SubjectDetail
                                           <polyline points="20 6 9 17 4 12" />
                                         </svg>
                                       </button>
-                                      <div onClick={() => toggleItemCompleted(topic.id, "subtopic", sub.name)} className="cursor-pointer select-none flex-grow">
-                                        <span className={`font-medium transition-all ${
-                                          isChecked ? "text-slate-500 line-through decoration-slate-600" : "text-slate-300 group-hover:text-slate-200"
-                                        }`}>
-                                          {sub.name}
-                                        </span>
-                                        {sub.details && (
-                                          <span className={`block text-[10px] mt-0.5 transition-all ${
-                                            isChecked ? "text-slate-600" : "text-slate-500"
+                                      {link ? (
+                                        <a
+                                          href={link}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          onClick={(e) => e.stopPropagation()}
+                                          className="select-none flex-grow block group/link"
+                                        >
+                                          <span className={`font-medium transition-all group-hover/link:text-blue-400 group-hover/link:underline ${
+                                            isChecked ? "text-slate-500 line-through decoration-slate-600" : "text-slate-300"
                                           }`}>
-                                            {sub.details}
+                                            {sub.name}
                                           </span>
-                                        )}
-                                      </div>
+                                          {sub.details && (
+                                            <span className={`block text-[10px] mt-0.5 transition-all ${
+                                              isChecked ? "text-slate-600" : "text-slate-500 group-hover/link:text-slate-400"
+                                            }`}>
+                                              {sub.details}
+                                            </span>
+                                          )}
+                                        </a>
+                                      ) : (
+                                        <div onClick={() => toggleItemCompleted(topic.id, "subtopic", sub.name)} className="cursor-pointer select-none flex-grow">
+                                          <span className={`font-medium transition-all ${
+                                            isChecked ? "text-slate-500 line-through decoration-slate-600" : "text-slate-300 group-hover:text-slate-200"
+                                          }`}>
+                                            {sub.name}
+                                          </span>
+                                          {sub.details && (
+                                            <span className={`block text-[10px] mt-0.5 transition-all ${
+                                              isChecked ? "text-slate-600" : "text-slate-500"
+                                            }`}>
+                                              {sub.details}
+                                            </span>
+                                          )}
+                                        </div>
+                                      )}
                                     </li>
                                   );
                                 })}
@@ -695,6 +794,7 @@ export default function SubjectDetail({ subject: initialSubject }: SubjectDetail
                               <ul className="space-y-2.5">
                                 {topic.exercises.map((ex, idx) => {
                                   const isChecked = !!completedItems[`${topic.id}-exercise-${ex.name}`];
+                                  const link = getLinkForType(topic.sources, "EXERCISES", ex.details);
                                   return (
                                     <li key={idx} className="flex items-start gap-2 text-xs leading-relaxed group">
                                       <button
@@ -710,20 +810,43 @@ export default function SubjectDetail({ subject: initialSubject }: SubjectDetail
                                           <polyline points="20 6 9 17 4 12" />
                                         </svg>
                                       </button>
-                                      <div onClick={() => toggleItemCompleted(topic.id, "exercise", ex.name)} className="cursor-pointer select-none flex-grow">
-                                        <span className={`font-medium transition-all ${
-                                          isChecked ? "text-slate-500 line-through decoration-slate-600" : "text-slate-300 group-hover:text-slate-200"
-                                        }`}>
-                                          {ex.name}
-                                        </span>
-                                        {ex.details && (
-                                          <span className={`block text-[10px] mt-0.5 transition-all ${
-                                            isChecked ? "text-slate-600" : "text-slate-500"
+                                      {link ? (
+                                        <a
+                                          href={link}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          onClick={(e) => e.stopPropagation()}
+                                          className="select-none flex-grow block group/link"
+                                        >
+                                          <span className={`font-medium transition-all group-hover/link:text-indigo-400 group-hover/link:underline ${
+                                            isChecked ? "text-slate-500 line-through decoration-slate-600" : "text-slate-300"
                                           }`}>
-                                            {ex.details}
+                                            {ex.name}
                                           </span>
-                                        )}
-                                      </div>
+                                          {ex.details && (
+                                            <span className={`block text-[10px] mt-0.5 transition-all ${
+                                              isChecked ? "text-slate-600" : "text-slate-500 group-hover/link:text-slate-400"
+                                            }`}>
+                                              {ex.details}
+                                            </span>
+                                          )}
+                                        </a>
+                                      ) : (
+                                        <div onClick={() => toggleItemCompleted(topic.id, "exercise", ex.name)} className="cursor-pointer select-none flex-grow">
+                                          <span className={`font-medium transition-all ${
+                                            isChecked ? "text-slate-500 line-through decoration-slate-600" : "text-slate-300 group-hover:text-slate-200"
+                                          }`}>
+                                            {ex.name}
+                                          </span>
+                                          {ex.details && (
+                                            <span className={`block text-[10px] mt-0.5 transition-all ${
+                                              isChecked ? "text-slate-600" : "text-slate-500"
+                                            }`}>
+                                              {ex.details}
+                                            </span>
+                                          )}
+                                        </div>
+                                      )}
                                     </li>
                                   );
                                 })}
@@ -742,6 +865,7 @@ export default function SubjectDetail({ subject: initialSubject }: SubjectDetail
                               <ul className="space-y-2.5">
                                 {topic.exams.map((exam, idx) => {
                                   const isChecked = !!completedItems[`${topic.id}-exam-${exam.name}`];
+                                  const link = getLinkForType(topic.sources, "EXAMS", exam.details);
                                   return (
                                     <li key={idx} className="flex items-start gap-2 text-xs leading-relaxed group">
                                       <button
@@ -757,31 +881,65 @@ export default function SubjectDetail({ subject: initialSubject }: SubjectDetail
                                           <polyline points="20 6 9 17 4 12" />
                                         </svg>
                                       </button>
-                                      <div onClick={() => toggleItemCompleted(topic.id, "exam", exam.name)} className="cursor-pointer select-none flex-grow">
-                                        <div className="flex flex-wrap items-center gap-1.5">
-                                          <span className={`font-medium transition-all ${
-                                            isChecked ? "text-slate-500 line-through decoration-slate-600" : "text-slate-300 group-hover:text-slate-200"
-                                          }`}>
-                                            {exam.name}
-                                          </span>
-                                          {exam.type && (
-                                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-semibold tracking-wide border uppercase transition-all shadow-sm ${
-                                              exam.type === "APPLICATION"
-                                                ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.2)]"
-                                                : "bg-amber-500/10 border-amber-500/20 text-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.2)]"
-                                            } ${isChecked ? "opacity-40" : ""}`}>
-                                              {exam.type === "APPLICATION" ? "Anwendung" : "Auswendiglernen"}
+                                      {link ? (
+                                        <a
+                                          href={link}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          onClick={(e) => e.stopPropagation()}
+                                          className="select-none flex-grow block group/link"
+                                        >
+                                          <div className="flex flex-wrap items-center gap-1.5">
+                                            <span className={`font-medium transition-all group-hover/link:text-purple-400 group-hover/link:underline ${
+                                              isChecked ? "text-slate-500 line-through decoration-slate-600" : "text-slate-300"
+                                            }`}>
+                                              {exam.name}
+                                            </span>
+                                            {exam.type && (
+                                              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-semibold tracking-wide border uppercase transition-all shadow-sm ${
+                                                exam.type === "APPLICATION"
+                                                  ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.2)]"
+                                                  : "bg-amber-500/10 border-amber-500/20 text-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.2)]"
+                                              } ${isChecked ? "opacity-40" : ""}`}>
+                                                {exam.type === "APPLICATION" ? "Anwendung" : "Auswendiglernen"}
+                                              </span>
+                                            )}
+                                          </div>
+                                          {exam.details && (
+                                            <span className={`block text-[10px] mt-0.5 transition-all ${
+                                              isChecked ? "text-slate-600" : "text-slate-500 group-hover/link:text-slate-400"
+                                            }`}>
+                                              {exam.details}
+                                            </span>
+                                          )}
+                                        </a>
+                                      ) : (
+                                        <div onClick={() => toggleItemCompleted(topic.id, "exam", exam.name)} className="cursor-pointer select-none flex-grow">
+                                          <div className="flex flex-wrap items-center gap-1.5">
+                                            <span className={`font-medium transition-all ${
+                                              isChecked ? "text-slate-500 line-through decoration-slate-600" : "text-slate-300 group-hover:text-slate-200"
+                                            }`}>
+                                              {exam.name}
+                                            </span>
+                                            {exam.type && (
+                                              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-semibold tracking-wide border uppercase transition-all shadow-sm ${
+                                                exam.type === "APPLICATION"
+                                                  ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.2)]"
+                                                  : "bg-amber-500/10 border-amber-500/20 text-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.2)]"
+                                              } ${isChecked ? "opacity-40" : ""}`}>
+                                                {exam.type === "APPLICATION" ? "Anwendung" : "Auswendiglernen"}
+                                              </span>
+                                            )}
+                                          </div>
+                                          {exam.details && (
+                                            <span className={`block text-[10px] mt-0.5 transition-all ${
+                                              isChecked ? "text-slate-600" : "text-slate-500"
+                                            }`}>
+                                              {exam.details}
                                             </span>
                                           )}
                                         </div>
-                                        {exam.details && (
-                                          <span className={`block text-[10px] mt-0.5 transition-all ${
-                                            isChecked ? "text-slate-600" : "text-slate-500"
-                                          }`}>
-                                            {exam.details}
-                                          </span>
-                                        )}
-                                      </div>
+                                      )}
                                     </li>
                                   );
                                 })}
