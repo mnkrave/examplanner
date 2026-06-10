@@ -206,9 +206,12 @@ export default function SubjectDetail({ subject: initialSubject }: SubjectDetail
         });
       });
 
-      // Create Picker View
+      // Create Picker View with folder navigation starting at root
       // @ts-ignore
       const view = new google.picker.DocsView(google.picker.ViewId.DOCS);
+      view.setIncludeFolders(true);
+      view.setSelectFolderEnabled(false);
+      view.setParent('root');
       view.setMimeTypes("application/pdf,text/plain");
 
       // @ts-ignore
