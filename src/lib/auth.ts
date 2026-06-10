@@ -115,13 +115,13 @@ export const authOptions: NextAuthOptions = {
       if (account) {
         token.accessToken = account.access_token;
       }
-      if (user) {
-        token.sub = user.id;
-        // @ts-ignore
-        token.role = user.role || "USER";
-      } else if (token.sub) {
-        const dbUser = await prisma.user.findUnique({ where: { id: token.sub as string } });
+      const email = token.email || user?.email;
+      if (email) {
+        const dbUser = await prisma.user.findUnique({
+          where: { email: email.toLowerCase() }
+        });
         if (dbUser) {
+          token.sub = dbUser.id; // Map to database CUID
           token.role = dbUser.role;
         }
       }
